@@ -1,0 +1,24 @@
+## Website application
+
+- StackName: myproject-static-website
+  TemplateName: platform/templates/static-website.yaml
+  Type: create_stack
+  SpecialStack: static-website
+  Properties:
+    IndexDocument: 'index.html'
+    BucketName: "myproject-website-xsdfdrgdfvhjbhjk67875"
+    Env: "dev"
+
+
+- StackName: myproject-lambda
+  TemplateName: platform/templates/lambda.yaml
+  Type: create_stack
+  SpecialStack: lambda
+  FolderName: lambda
+  Properties:
+    AppName: "myproject"
+    AppBucket: "myproject-application-bucket"
+    Env: "dev"
+    Build: "1"
+    FunctionName: "lambda"
+

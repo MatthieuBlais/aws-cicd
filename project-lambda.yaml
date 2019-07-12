@@ -1,0 +1,93 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Application template lambda'
+
+Parameters:
+
+  AppBucket:
+    Description: 'Application Bucket'
+    Type: String
+
+  CodeS3Key:
+    Description: 'Key of the lambda code'
+    Type: String
+
+  LambdaName:
+    Description: 'Application Lambda'
+    Type: String
+
+  AppName:
+    Description: Name of Application
+    Type: String
+
+Resources:
+
+
+  Lambda:
+    Type: "AWS::Lambda::Function"
+    Properties: 
+      Handler: app.handler
+      FunctionName: !Ref LambdaName
+      Role: !GetAtt [ LambdaRole, Arn]
+      Code: 
+        S3Bucket: !Ref AppBucket
+        S3Key: !Ref CodeS3Key
+      Runtime: python3.6
+      Timeout: 25
+      Description: Build codecommit lambda
+      Environment:
+        Variables: 
+          REGION : ap-southeast-1
+          APPLICATION: !Ref AppName
+
+  LambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: '/'
+      Policies:
+        - PolicyName: LambdaCodeCommitPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - '*'
+              - Effect: Allow
+                Action:
+                  - ssm:PutParameter
+                  - ssm:GetParameter
+                Resource:
+                  - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${AppName}/*"
+                  - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${AppName}/*/*"
+              - Effect: Allow
+                Action:
+                  - s3:List*
+                Resource:
+                  - '*'
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource:
+                  - !Join ['', ['arn:aws:s3:::', !Ref AppBucket, '/*' ]]
+              - Effect: Allow
+                Action:
+                  - codebuild:StartBuild
+                  - codebuild:List*
+                  - codebuild:Get*
+                Resource:
+                  - !Sub "arn:aws:codebuild:${AWS::Region}:${AWS::AccountId}:project/${AppName}*"
+
+

@@ -1,0 +1,22 @@
+- StackName: myproject-application-bucket
+  TemplateName: project-bucket.yaml
+  Properties:
+    AppBucket: 'myproject-application-bucket'
+
+- StackName: myproject-codecommit-lambda
+  TemplateName: project-lambda.yaml
+  Properties:
+    AppBucket: myproject-application-bucket
+    CodeS3Key: codecommit/lambda/automation.zip
+    LambdaName: myproject-codecommit-lambda
+    AppName: myproject
+
+- StackName: myproject-codecommit
+  TemplateName: project.yaml
+  Properties:
+    RunKey: codebuild/latest/run.py
+    RunZipKey: codebuild/latest/run.zip
+    CodebuildImage: 'aws/codebuild/docker:17.09.0'
+    App: myproject
+    CodeCommitListenerLambdaName: myproject-codecommit-lambda
+    AppBucket: myproject-application-bucket

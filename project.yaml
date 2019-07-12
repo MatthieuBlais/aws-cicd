@@ -1,0 +1,208 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Application template'
+
+Parameters:
+
+  RunKey:
+    Description: 'Application run.py key'
+    Type: String
+  RunZipKey:
+    Description: 'Application run.zip key'
+    Type: String
+  CodebuildImage:
+    Description: 'Docker image'
+    Type: String
+  App:
+    Description: 'Application Name'
+    Type: String
+  CodeCommitListenerLambdaName:
+    Description: 'ARN of the lambda triggered by codecommit'
+    Type: String
+  AppBucket:
+    Description: 'Application Bucket'
+    Type: String
+
+  DeployspecFilename:
+    Description: 'List of deployspecs'
+    Type: String
+    Default: platform/deployspec.yaml
+
+  PackagePrefix:
+    Description: Prefix of the S3 path where the packages are stored
+    Type: String
+    Default: 'packages/'
+
+Resources:
+
+  AppRepo:
+    Type: AWS::CodeCommit::Repository
+    Properties:
+      RepositoryName: !Ref App
+      RepositoryDescription: !Sub "Repository for ${App}"
+      Triggers:
+        - Name: codebuild-trigger
+          DestinationArn: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${CodeCommitListenerLambdaName}"
+          Events:
+            - createReference
+            - updateReference 
+
+  LambdaInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref CodeCommitListenerLambdaName
+      Action: 'lambda:InvokeFunction'
+      Principal: codecommit.amazonaws.com
+      SourceAccount: !Ref 'AWS::AccountId'
+      SourceArn: !Sub "arn:aws:codecommit:${AWS::Region}:${AWS::AccountId}:${App}"
+
+  AppBuild:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Ref App
+      Artifacts:
+        Type: NO_ARTIFACTS
+      Description: Trigger a build
+      Environment:
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: !Ref CodebuildImage
+        Type: LINUX_CONTAINER
+        EnvironmentVariables:
+          - { Name: APPLICATION_BUCKET, Value: !Ref AppBucket }
+          - { Name: RUN_SCRIPT, Value: !Join [ "/", ["s3:/", !Ref AppBucket, !Ref RunKey ]] }
+          - { Name: DEPLOYSPEC_FILENAME, Value: !Ref DeployspecFilename }
+          - { Name: REGION, Value: !Ref "AWS::Region" }
+          - { Name: PACKAGE_PREFIX, Value: !Ref PackagePrefix }
+      ServiceRole: !Ref AppCodeBuildRole
+      Source:
+        Location: !GetAtt [ AppRepo, CloneUrlHttp ]
+        Type: CODECOMMIT
+        GitCloneDepth: 1
+        BuildSpec: |
+          version: 0.2
+          phases:
+            pre_build:
+              commands:
+                - aws s3 cp $RUN_SCRIPT ./run.py
+                - pip install pyaml boto3
+                - pip install --upgrade awscli
+            build:
+              commands:
+                - python run.py build $BRANCH $BUILD_NUMBER
+
+            post_build:
+              commands:
+                - cat compile-response.txt || true
+                - cat deploy-response.txt || true 
+
+      Tags: 
+        - { Key: Application, Value: !Ref App }
+
+
+
+
+
+
+
+  AppTeadown:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub "${App}-teardown"
+      Artifacts:
+        Type: NO_ARTIFACTS
+      Description: Trigger a teardown
+      Environment:
+        ComputeType: BUILD_GENERAL1_SMALL
+        EnvironmentVariables:
+          - { Name: BRANCH, Value: '', Type: PLAINTEXT }
+          - { Name: BUILD_NUMBER, Value: '', Type: PLAINTEXT }
+          - { Name: APPLICATION_BUCKET, Value: !Ref AppBucket }
+          - { Name: RUN_SCRIPT, Value: !Join [ "/", ["s3:/", !Ref AppBucket, !Ref RunKey ]] }
+          - { Name: DEPLOYSPEC_FILENAME, Value: !Ref DeployspecFilename }
+          - { Name: REGION, Value: !Ref "AWS::Region" }
+          - { Name: PACKAGE_PREFIX, Value: !Ref PackagePrefix }
+        Image: !Ref CodebuildImage
+        Type: LINUX_CONTAINER
+      ServiceRole: !Ref AppCodeBuildRole
+      Source:
+        Location: !Join [ "/", [ Ref: AppBucket, Ref: RunZipKey ]]
+        Type: S3
+        GitCloneDepth: 1
+        BuildSpec: !Sub |
+          version: 0.2
+          phases:
+            pre_build:
+              commands:
+                - aws s3 cp $RUN_SCRIPT ./run.py
+                - pip install pyaml boto3
+                - pip install --upgrade awscli
+            build:
+              commands:
+                - python run.py teardown $BRANCH $BUILD_NUMBER
+
+            post_build:
+              commands:
+                - cat compile-response.txt || true
+                - cat deploy-response.txt || true 
+
+      Tags: 
+        - { Key: Application, Value: !Ref App }
+
+  AppCodeBuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - codebuild.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: '/'
+      Policies:
+        - PolicyName: CodeBuildInlinePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !Join ['', ['arn:aws:logs:', !Ref 'AWS::Region', ':', !Ref 'AWS::AccountId', ':log-group:/aws/codebuild/', !Sub '${App}*']]
+              - Effect: Allow
+                Action:
+                  - codecommit:GitPull
+                Resource:
+                  - !GetAtt [ AppRepo, Arn ]
+              - Effect: Allow
+                Action:
+                  - cloudformation:UpdateStack
+                  - cloudformation:CreateStack
+                  - cloudformation:DeleteStack
+                  - cloudformation:List*
+                  - cloudformation:Describe*
+                Resource:
+                  - '*'
+              - Effect: Allow
+                Action:
+                  - s3:List*
+                Resource:
+                  - '*'
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource:
+                  - !Join ['', ['arn:aws:s3:::', !Ref AppBucket, '/*' ]]
+              - Effect: Allow # TOCHANGE
+                Action:
+                  - '*'
+                Resource:
+                  - '*'
+
+
+
+

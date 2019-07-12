@@ -1,0 +1,68 @@
+Description: Triggering a lambda function on S3 event
+Parameters:
+  AppName:
+    Description: Application Name
+    Type: String
+  AppBucket:
+    Description: Application bucket Name
+    Type: String
+  Env:
+    Description: Environment
+    Type: String
+  Build:
+    Description: Build Number
+    Type: String
+  FunctionName:
+    Description: Name of the lambda function
+    Type: String
+  Handler:
+    Description: Lambda Handler
+    Type: String
+    Default: app.handler
+  Timeout:
+    Description: Lambda Timeout
+    Type: Number
+    Default: 10
+  Runtime:
+    Description: Lambda Runtime
+    Type: String
+    Default: python3.6
+
+Resources:
+
+
+  Lambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: Lambda function description
+      Handler: !Ref Handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      FunctionName: !Sub "${AppName}-${FunctionName}-${Env}"
+      Code:
+        S3Bucket: !Ref AppBucket
+        S3Key: !Sub "lambda/${Env}/${Build}/${FunctionName}.zip"
+      Timeout: !Ref Timeout
+      Runtime: !Ref Runtime
+      Environment:
+        Variables:
+          APPLICATION_NAME: !Ref AppName
+          BRANCH: !Ref Env
+          REGION_NAME: !Ref AWS::Region
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${AppName}-${FunctionName}-role-${Env}"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal: {Service: [lambda.amazonaws.com]}
+          Action: ['sts:AssumeRole']
+      Path: /
+      ManagedPolicyArns:
+      - "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+
+Outputs:
+  Lambda:
+    Value: !Ref Lambda

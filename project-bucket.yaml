@@ -1,0 +1,23 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Application template bucket'
+
+Parameters:
+
+  AppBucket:
+    Description: 'Application Bucket'
+    Type: String
+
+Resources:
+
+
+  Bucket:
+    Type: 'AWS::S3::Bucket'
+    Properties:
+      BucketName: !Ref AppBucket
+      VersioningConfiguration: 
+        Status: Enabled
+      BucketEncryption: 
+        ServerSideEncryptionConfiguration: 
+          - ServerSideEncryptionByDefault: 
+              SSEAlgorithm: aws:kms
+
